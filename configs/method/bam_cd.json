@@ -11,7 +11,7 @@
     "pretrained": false,
     "encoder_weights": null,
     "activation": null,  // Options: "softmax", "logsoftmax", null
-    "siamese": true,  // For V2: false
+    "siamese": false,  // V2 model uses pseudo-siamese (2 encoders)
     "decoder_attention_type": "scse",  // Options: "scse", null
     "decoder_use_batchnorm": true
 }

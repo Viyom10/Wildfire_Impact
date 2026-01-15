@@ -1,0 +1,15 @@
+# FLOGA Required Packages
+torch
+torchvision
+torchaudio
+numpy
+pandas
+matplotlib
+scikit-learn
+tqdm
+einops
+torchmetrics
+pyjson5
+h5py
+hdf5plugin
+segmentation-models-pytorch
