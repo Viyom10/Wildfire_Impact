@@ -75,7 +75,23 @@ pyjson5: OK
 
 ## ⚡ Quick Start Testing
 
-### Option A: Test with Pre-trained Model (Fastest)
+### Option A: Test with Synthetic Data (Fastest - No Downloads)
+
+Test the complete pipeline with minimal synthetic data:
+
+```powershell
+# 1. Generate synthetic wildfire dataset
+python create_synthetic_dataset.py --event_type wildfire
+
+# 2. Verify dataset was created
+ls data/processed/sen2_20_mod_500/
+# Should show: synthetic_train.pkl, synthetic_val.pkl, synthetic_test.pkl
+
+# 3. Run quick training test
+python run_experiment.py --config configs/config_eval_synthetic.json
+```
+
+### Option B: Test with Pre-trained Model (Fastest)
 
 If you have access to pre-trained weights:
 
@@ -120,6 +136,75 @@ python run_experiment.py --config configs/config.json
 ---
 
 ## 🧪 Detailed Testing Procedures
+
+### Test 0: Synthetic Data Generation (NEW - Multi-Hazard)
+
+**Purpose**: Test synthetic dataset creation for wildfire and drought detection
+
+#### Step 0.1: Generate Wildfire Synthetic Data
+
+```powershell
+python create_synthetic_dataset.py --event_type wildfire
+```
+
+**Expected Output**:
+```
+============================================================
+Creating Minimal Test Dataset
+============================================================
+
+Creating synthetic patches...
+
+Creating train split (10 samples)...
+  ✓ Created synthetic_event_train_000_patch_000 (positive)
+  ✓ Created synthetic_event_train_001_patch_000 (negative)
+  ...
+  ✓ Saved data/processed/sen2_20_mod_500/synthetic_train.pkl
+
+Creating val split (3 samples)...
+  ✓ Saved data/processed/sen2_20_mod_500/synthetic_val.pkl
+
+Creating test split (3 samples)...
+  ✓ Saved data/processed/sen2_20_mod_500/synthetic_test.pkl
+
+============================================================
+✅ Synthetic wildfire dataset created successfully!
+============================================================
+
+Dataset location: data/processed
+Split files:
+  - data/processed/sen2_20_mod_500/synthetic_train.pkl
+  - data/processed/sen2_20_mod_500/synthetic_val.pkl
+  - data/processed/sen2_20_mod_500/synthetic_test.pkl
+```
+
+#### Step 0.2: Generate Drought Synthetic Data
+
+```powershell
+python create_synthetic_dataset.py --event_type drought
+```
+
+**Expected Output**: (Similar to above, but drought patches have rectangular affected areas)
+```
+============================================================
+✅ Synthetic drought dataset created successfully!
+============================================================
+```
+
+#### Step 0.3: Verify Synthetic Data Files
+
+```powershell
+# Check that data was created
+ls data/processed/2024/*.npy
+
+# Should see multiple .npy files for before/after images and labels:
+# - synthetic_event_train_000_patch_000.S2_before.npy
+# - synthetic_event_train_000_patch_000.S2_after.npy
+# - synthetic_event_train_000_patch_000.label.npy
+# - synthetic_event_train_000_patch_000.clc_mask.npy
+```
+
+---
 
 ### Test 1: Dataset Preprocessing
 
@@ -187,36 +272,47 @@ ls data/processed/
 
 ---
 
-### Test 2: Configuration Validation
+### Test 2: Configuration Validation (Updated)
 
-**Purpose**: Ensure configuration files are valid
+**Purpose**: Ensure configuration files are valid and support event_type
 
 ```powershell
-# Test configuration loading
-python -c "import pyjson5; cfg = pyjson5.load(open('configs/config.json')); print('Config loaded successfully')"
+# Test configuration loading with event_type
+python -c "import pyjson5; cfg = pyjson5.load(open('configs/config.json')); print(f'Config loaded successfully'); print(f'Event type: {cfg.get(\"event_type\", \"wildfire\")}')"
 
 # Test all method configs
 Get-ChildItem configs/method/*.json | ForEach-Object {
     python -c "import pyjson5; pyjson5.load(open('$_')); print('✓ $($_.Name)')"
 }
+
+# Verify event_type options are present in main config
+python -c "
+import pyjson5
+cfg = pyjson5.load(open('configs/config.json'))
+print(f'Event type in config: {cfg.get(\"event_type\", \"NOT FOUND\")}')
+print(f'Supported types: wildfire, drought')
+"
 ```
 
 **Expected Output**:
 ```
 Config loaded successfully
+Event type: wildfire
 ✓ bam_cd.json
 ✓ unet.json
 ✓ snunet.json
 ...
+Event type in config: wildfire
+Supported types: wildfire, drought
 ```
 
 ---
 
-### Test 3: Dataset Loading
+### Test 3: Dataset Loading (Updated for Multi-Hazard)
 
-**Purpose**: Verify dataset class works correctly
+**Purpose**: Verify dataset class works correctly with event_type filtering
 
-Create test script `test_dataset.py`:
+Create test script `test_dataset_multihazard.py`:
 
 ```python
 import sys
@@ -233,17 +329,41 @@ configs = pyjson5.load(open('configs/config.json'))
 configs['paths']['dataset'] = 'data/processed/'
 configs['dataset_type'] = 'sen2_20_mod_500'
 
-print("Testing Dataset Loading...")
+print("Testing Multi-Hazard Dataset Loading...\n")
 
-# Test train dataset
+# Test 1: Wildfire dataset
+print("Test 1: Loading wildfire dataset")
+configs['event_type'] = 'wildfire'
+try:
+    wildfire_dataset = Dataset('train', configs)
+    print(f"✓ Wildfire train dataset: {len(wildfire_dataset)} samples")
+    
+    # Check if dataset has event_type metadata
+    batch = wildfire_dataset[0]
+    if 'event_type' in batch:
+        print(f"✓ Event type in batch: {batch['event_type']}")
+except Exception as e:
+    print(f"✗ Error loading wildfire dataset: {e}")
+
+# Test 2: Drought dataset
+print("\nTest 2: Loading drought dataset")
+configs['event_type'] = 'drought'
+try:
+    drought_dataset = Dataset('train', configs)
+    print(f"✓ Drought train dataset: {len(drought_dataset)} samples")
+    
+    # Check if dataset has event_type metadata
+    batch = drought_dataset[0]
+    if 'event_type' in batch:
+        print(f"✓ Event type in batch: {batch['event_type']}")
+except Exception as e:
+    # Expected if drought data not available
+    print(f"⚠ Drought dataset not found (expected if only wildfire data exists): {e}")
+
+# Test 3: DataLoader with batch loading
+print("\nTest 3: DataLoader functionality")
+configs['event_type'] = 'wildfire'
 train_dataset = Dataset('train', configs)
-print(f"✓ Train dataset: {len(train_dataset)} samples")
-
-# Test validation dataset
-val_dataset = Dataset('val', configs)
-print(f"✓ Val dataset: {len(val_dataset)} samples")
-
-# Test data loader
 train_loader = DataLoader(train_dataset, batch_size=2, shuffle=True)
 batch = next(iter(train_loader))
 
@@ -252,25 +372,32 @@ print(f"✓ Before image shape: {batch['S2_before_image'].shape}")
 print(f"✓ After image shape: {batch['S2_after_image'].shape}")
 print(f"✓ Label shape: {batch['label'].shape}")
 
-print("\n✅ Dataset loading test PASSED!")
+print("\n✅ Multi-hazard dataset loading test PASSED!")
 ```
 
 Run test:
 ```powershell
-python test_dataset.py
+python test_dataset_multihazard.py
 ```
 
 **Expected Output**:
 ```
-Testing Dataset Loading...
-✓ Train dataset: 15000 samples
-✓ Val dataset: 5000 samples
+Testing Multi-Hazard Dataset Loading...
+
+Test 1: Loading wildfire dataset
+✓ Wildfire train dataset: 16 samples
+✓ Event type in batch: wildfire
+
+Test 2: Loading drought dataset
+⚠ Drought dataset not found (expected if only wildfire data exists)
+
+Test 3: DataLoader functionality
 ✓ Batch keys: dict_keys(['S2_before_image', 'S2_after_image', 'label', ...])
 ✓ Before image shape: torch.Size([2, 9, 256, 256])
 ✓ After image shape: torch.Size([2, 9, 256, 256])
 ✓ Label shape: torch.Size([2, 256, 256])
 
-✅ Dataset loading test PASSED!
+✅ Multi-hazard dataset loading test PASSED!
 ```
 
 ---
@@ -346,26 +473,26 @@ Testing Model Initialization...
 
 ---
 
-### Test 5: Training Pipeline (Short Run)
+### Test 5: Training Pipeline (Short Run) - Multi-Hazard
 
-**Purpose**: Verify complete training pipeline
+**Purpose**: Verify complete training pipeline works for wildfire and drought
 
-#### Step 5.1: Create Test Configuration
+#### Step 5.1: Create Test Configuration for Wildfire
 
 ```powershell
-# Copy base config for testing
-Copy-Item configs/config.json configs/config_test.json
+Copy-Item configs/config.json configs/config_test_wildfire.json
 ```
 
-Edit `configs/config_test.json`:
+Edit `configs/config_test_wildfire.json`:
 ```json
 {
     "method": "unet",
     "mode": "train",
+    "event_type": "wildfire",
     "dataset_type": "sen2_20_mod_500",
-    "gpu_ids": [0],  // or empty [] for CPU
+    "gpu_ids": [0],
     "train": {
-        "n_epochs": 3,
+        "n_epochs": 2,
         "rep_times": 1,
         "val_freq": 1,
         "save_checkpoint_freq": -1,
@@ -381,13 +508,13 @@ Edit `configs/config_test.json`:
     },
     "paths": {
         "dataset": "data/processed/",
-        "results": "results_test/",
+        "results": "results_test_wildfire/",
         "load_state": null
     },
     "datasets": {
-        "train": "allEvents_60-20-20_r1_v4_train.pkl",
-        "val": "allEvents_60-20-20_r1_v4_val.pkl",
-        "test": "allEvents_60-20-20_r1_v4_test.pkl",
+        "train": "synthetic_train.pkl",
+        "val": "synthetic_val.pkl",
+        "test": "synthetic_test.pkl",
         "data_source": "sen2",
         "batch_size": 4,
         "num_workers": 2,
@@ -397,36 +524,68 @@ Edit `configs/config_test.json`:
 }
 ```
 
-#### Step 5.2: Run Training Test
+#### Step 5.2: Create Test Configuration for Drought
 
 ```powershell
-python run_experiment.py --config configs/config_test.json
+Copy-Item configs/config_test_wildfire.json configs/config_test_drought.json
+```
+
+Edit `configs/config_test_drought.json` - Change:
+```json
+{
+    "event_type": "drought",
+    "paths": {
+        "results": "results_test_drought/"
+    }
+}
+```
+
+#### Step 5.3: Run Wildfire Training Test
+
+```powershell
+python run_experiment.py --config configs/config_test_wildfire.json
 ```
 
 **Expected Output**:
 ```
 --- Training a new model ---
---- Model path: results_test/unet/20260115123456 ---
+--- Model path: results_test_wildfire/unet/20260124123456 ---
+Using event type: wildfire
 Using cross_entropy with class weights: (1, 1).
 
 ===== REP 0 =====
 
-(0) Train Loss: 0.6931: 100%|████████| 1875/1875
+(0) Train Loss: 0.6931: 100%|████████| 4/4
 F1-score: 0.5234
-VAL F1-score: 0.5123
+VAL F1-score (Unburnt): 0.5123
+VAL F1-score (Burnt): 0.4234
 
-(1) Train Loss: 0.6245: 100%|████████| 1875/1875
-F1-score: 0.6234
-VAL F1-score: 0.6123
-Saved best checkpoint!
-
-(2) Train Loss: 0.5891: 100%|████████| 1875/1875
+(1) Train Loss: 0.5891: 100%|████████| 4/4
 F1-score: 0.6734
-VAL F1-score: 0.6523
+VAL F1-score (Unburnt): 0.6523
+VAL F1-score (Burnt): 0.5892
 Saved best checkpoint!
 ```
 
-#### Step 5.3: Verify Training Outputs
+#### Step 5.4: Run Drought Training Test
+
+```powershell
+python run_experiment.py --config configs/config_test_drought.json
+```
+
+**Expected Output**:
+```
+--- Training a new model ---
+--- Model path: results_test_drought/unet/20260124123457 ---
+Using event type: drought
+Using cross_entropy with class weights: (1, 1).
+
+===== REP 0 =====
+... (Similar to wildfire but with drought labels)
+```
+
+#### Step 5.5: Verify Training Outputs
+
 
 ```powershell
 # Check results directory
@@ -442,55 +601,70 @@ ls results_test/unet/
 
 ---
 
-### Test 6: Evaluation Pipeline
+### Test 6: Evaluation Pipeline (Automatic Label Detection)
 
-**Purpose**: Test model evaluation on test set
+**Purpose**: Test model evaluation on test set with automatic event_type detection
 
-#### Step 6.1: Update Config for Evaluation
+#### Step 6.1: Update Config for Wildfire Evaluation
 
-Edit `configs/config_test.json`:
+Edit `configs/config_test_wildfire.json`:
 ```json
 {
     "mode": "eval",
+    "event_type": "wildfire",
     "paths": {
-        "load_state": "results_test/unet/<timestamp>/checkpoints/0/best_segmentation.pt"
+        "load_state": "results_test_wildfire/unet/<timestamp>/checkpoints/0/best_segmentation.pt"
     }
 }
 ```
 
-#### Step 6.2: Run Evaluation
+#### Step 6.2: Run Wildfire Evaluation
 
 ```powershell
-python run_experiment.py --config configs/config_test.json
+python run_experiment.py --config configs/config_test_wildfire.json
 ```
 
 **Expected Output**:
 ```
---- Testing model for results_test/unet/.../best_segmentation.pt ---
+--- Testing model for results_test_wildfire/unet/.../best_segmentation.pt ---
+Using event type: wildfire
 
 Loading checkpoint...
 
-Evaluating: 100%|████████| 1250/1250
+Evaluating: 100%|████████| 2/2
 
 (0) test F-Score (Unburnt): 85.23
 (0) test F-Score (Burnt): 78.45
 (0) test IoU (Unburnt): 74.32
 (0) test IoU (Burnt): 64.56
-(0) test Precision (Unburnt): 86.12
-(0) test Precision (Burnt): 76.23
-(0) test Recall (Unburnt): 84.34
-(0) test Recall (Burnt): 80.89
-(0) test Accuracy (Unburnt): 88.56
-(0) test Accuracy (Burnt): 82.34
-(0) test MeanIoU: 69.44
-
-===============
-
-f1 (burnt): 78.45
-f1 (unburnt): 85.23
-Mean f-score: 81.84
-Mean IoU: 69.44
+...
 ```
+
+#### Step 6.3: Run Drought Evaluation
+
+Update `configs/config_test_drought.json` and run:
+
+```powershell
+python run_experiment.py --config configs/config_test_drought.json
+```
+
+**Expected Output**:
+```
+--- Testing model for results_test_drought/unet/.../best_segmentation.pt ---
+Using event type: drought
+
+Loading checkpoint...
+
+Evaluating: 100%|████████| 2/2
+
+(0) test F-Score (No drought): 85.23
+(0) test F-Score (Drought-affected): 78.45
+(0) test IoU (No drought): 74.32
+(0) test IoU (Drought-affected): 64.56
+...
+```
+
+**Note**: Class labels automatically change based on `event_type` in config!
 
 ---
 
@@ -677,29 +851,44 @@ pip install hdf5plugin
 
 Use this checklist to verify your setup:
 
+### Multi-Hazard Testing Checklist (NEW):
+- [ ] Synthetic wildfire dataset created successfully
+- [ ] Synthetic drought dataset created successfully
+- [ ] `event_type` parameter present in configs/config.json
+- [ ] Wildfire training runs and produces loss outputs
+- [ ] Drought training runs and produces loss outputs
+- [ ] Wildfire metrics show correct labels (Unburnt/Burnt)
+- [ ] Drought metrics show correct labels (No drought/Drought-affected)
+- [ ] Class labels automatically change based on event_type
+
 ### Pre-Training Checklist:
 - [ ] Python 3.8+ installed
 - [ ] All dependencies installed (PyTorch, etc.)
 - [ ] CUDA working (if using GPU)
-- [ ] Dataset downloaded
+- [ ] Dataset downloaded (or synthetic data generated)
 - [ ] Dataset preprocessed (patches created)
 - [ ] Train/val/test splits created
 - [ ] Configuration file updated with correct paths
+- [ ] `event_type` set to "wildfire" or "drought"
 - [ ] Dataset loading test passed
 - [ ] Model initialization test passed
 
 ### During Training Checklist:
+- [ ] Event type logged at start ("Using event type: ...")
 - [ ] Training loss decreasing
 - [ ] Validation F1-score improving
 - [ ] No NaN values in loss
 - [ ] GPU utilization reasonable (if using GPU)
 - [ ] Checkpoints being saved
+- [ ] Correct class labels in wandb logs
 
 ### Post-Training Checklist:
 - [ ] Best checkpoint saved
 - [ ] Evaluation metrics reasonable (F1 > 50%)
+- [ ] Class labels match event_type (Burnt/Unburnt or Drought/No drought)
 - [ ] Visualizations generated successfully
 - [ ] Results reproducible
+- [ ] Both wildfire and drought models work correctly
 
 ---
 
@@ -759,8 +948,23 @@ for module in required:
         print(f"   ✗ {module} - NOT INSTALLED")
         tests_failed += 1
 
-# Test 5: Config files
-print("\n5. Testing config files...")
+# Test 5: Config event_type parameter (NEW)
+print("\n5. Testing event_type in config...")
+try:
+    cfg = pyjson5.load(open('configs/config.json'))
+    event_type = cfg.get('event_type', 'wildfire')
+    if event_type in ['wildfire', 'drought']:
+        print(f"   ✓ event_type: {event_type}")
+        tests_passed += 1
+    else:
+        print(f"   ✗ Invalid event_type: {event_type}")
+        tests_failed += 1
+except Exception as e:
+    print(f"   ✗ Error reading event_type: {e}")
+    tests_failed += 1
+
+# Test 6: Config files
+print("\n6. Testing config files...")
 if Path('configs/config.json').exists():
     print(f"   ✓ configs/config.json")
     tests_passed += 1
@@ -768,8 +972,8 @@ else:
     print(f"   ✗ configs/config.json NOT FOUND")
     tests_failed += 1
 
-# Test 6: Model files
-print("\n6. Testing model files...")
+# Test 7: Model files
+print("\n7. Testing model files...")
 model_files = ['unet.py', 'snunet.py', 'changeformer.py']
 for mf in model_files:
     if Path(f'models/{mf}').exists():
@@ -777,6 +981,17 @@ for mf in model_files:
         tests_passed += 1
     else:
         print(f"   ✗ models/{mf} NOT FOUND")
+        tests_failed += 1
+
+# Test 8: Dataset and experiment scripts (NEW)
+print("\n8. Testing key scripts...")
+scripts = ['create_synthetic_dataset.py', 'run_experiment.py', 'dataset_utils.py']
+for script in scripts:
+    if Path(script).exists():
+        print(f"   ✓ {script}")
+        tests_passed += 1
+    else:
+        print(f"   ✗ {script} NOT FOUND")
         tests_failed += 1
 
 # Summary
@@ -797,15 +1012,123 @@ python quick_test.py
 
 ---
 
+## � Complete End-to-End Test (Recommended Starting Point)
+
+Follow these steps to test the entire system in 10-15 minutes:
+
+### Step 1: Create Synthetic Wildfire Data (2 min)
+
+```powershell
+python create_synthetic_dataset.py --event_type wildfire
+```
+
+### Step 2: Create Synthetic Drought Data (2 min)
+
+```powershell
+python create_synthetic_dataset.py --event_type drought
+```
+
+### Step 3: Verify Synthetic Data (1 min)
+
+```powershell
+python test_dataset_multihazard.py
+```
+
+### Step 4: Run Quick Training Test - Wildfire (5 min)
+
+```powershell
+python run_experiment.py --config configs/config_eval_synthetic.json
+```
+
+Expected: Training completes with loss decreasing and F1-score improving
+
+### Step 5: Verify Different Event Types Work (2 min)
+
+Edit `configs/config_eval_synthetic.json` and change:
+```json
+"event_type": "drought"
+```
+
+Run again:
+```powershell
+python run_experiment.py --config configs/config_eval_synthetic.json
+```
+
+### Step 6: Check Class Labels Changed (1 min)
+
+Monitor output and verify:
+- **Wildfire**: "Using event type: wildfire", metrics show "Burnt/Unburnt"
+- **Drought**: "Using event type: drought", metrics show "Drought-affected/No drought"
+
+---
+
+## 📝 Running Tests in Sequence
+
+### Option 1: Minimal Test (5-10 minutes)
+
+```powershell
+# 1. Generate synthetic data
+python create_synthetic_dataset.py --event_type wildfire
+
+# 2. Run quick test with synthetic data
+python quick_test.py
+
+# 3. Train for 2 epochs on synthetic data
+python run_experiment.py --config configs/config_eval_synthetic.json
+```
+
+### Option 2: Complete Multi-Hazard Test (15-20 minutes)
+
+```powershell
+# 1. Test synthetic wildfire
+python create_synthetic_dataset.py --event_type wildfire
+python run_experiment.py --config configs/config_test_wildfire.json
+
+# 2. Test synthetic drought
+python create_synthetic_dataset.py --event_type drought
+python run_experiment.py --config configs/config_test_drought.json
+
+# 3. Verify both worked
+python test_dataset_multihazard.py
+```
+
+### Option 3: Comprehensive Validation (30+ minutes)
+
+```powershell
+# Run all validation steps
+python quick_test.py
+python test_models.py
+python test_dataset_multihazard.py
+python create_synthetic_dataset.py --event_type wildfire
+python create_synthetic_dataset.py --event_type drought
+python run_experiment.py --config configs/config_test_wildfire.json
+python run_experiment.py --config configs/config_test_drought.json
+python visualize_predictions.py --results_path results_test_wildfire/ --config configs/config_test_wildfire.json --mode test
+```
+
+---
+
 ## 📞 Getting Help
 
 If you encounter issues:
 
 1. **Check logs**: Look at terminal output for error messages
-2. **Verify paths**: Ensure all paths in config files are correct
-3. **Check GPU memory**: Use `nvidia-smi` to monitor GPU usage
-4. **Reduce complexity**: Start with smaller batch sizes and fewer epochs
-5. **Test components individually**: Use the individual test scripts above
+2. **Run quick_test.py**: Verify basic setup is correct
+3. **Verify paths**: Ensure all paths in config files are correct
+4. **Check GPU memory**: Use `nvidia-smi` to monitor GPU usage
+5. **Reduce complexity**: Start with smaller batch sizes and fewer epochs
+6. **Test components individually**: Use the individual test scripts above
+7. **Check event_type**: Verify `"event_type"` is set in your config file
+
+### Common Issues:
+
+| Issue | Solution |
+|-------|----------|
+| `KeyError: 'event_type'` | Add `"event_type": "wildfire"` to your config.json |
+| Dataset not found | Verify `event_type` matches dataset metadata |
+| Wrong class labels | Check that `event_type` in config matches your data type |
+| No synthetic data | Run `python create_synthetic_dataset.py --event_type wildfire` first |
+| CUDA out of memory | Reduce `batch_size` in config or set `gpu_ids: []` to use CPU |
 
 ---
 
@@ -815,10 +1138,12 @@ After successful testing:
 
 1. **Full training**: Increase epochs to 150, rep_times to 10
 2. **Experiment tracking**: Enable WandB for better monitoring
-3. **Hyperparameter tuning**: Try different learning rates, batch sizes
-4. **Model comparison**: Test all 10 models and compare results
-5. **Publication-ready results**: Use the benchmark splits provided
+3. **Both event types**: Train models on both wildfire and drought
+4. **Hyperparameter tuning**: Try different learning rates, batch sizes
+5. **Model comparison**: Test all 10 models and compare results
+6. **Publication-ready results**: Use the benchmark splits provided
 
 ---
 
-*Last Updated: January 15, 2026*
+*Last Updated: January 24, 2026*
+*Added multi-hazard (wildfire + drought) testing support*

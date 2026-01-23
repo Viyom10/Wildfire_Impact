@@ -15,15 +15,31 @@ from utils import (
 )
 
 
-CLASS_LABELS = {0: 'Unburnt', 1: 'Burnt', 2: 'Other events'}
+# Class labels for different event types
+CLASS_LABELS_WILDFIRE = {0: 'Unburnt', 1: 'Burnt', 2: 'Other events'}
+CLASS_LABELS_DROUGHT = {0: 'No drought', 1: 'Drought-affected', 2: 'Mixed/Uncertain'}
+
+def get_class_labels(event_type='wildfire'):
+    """Get class labels based on event type"""
+    if event_type == 'drought':
+        return CLASS_LABELS_DROUGHT
+    else:
+        return CLASS_LABELS_WILDFIRE
+
+CLASS_LABELS = CLASS_LABELS_WILDFIRE  # Default for backward compatibility
 
 
 def train_change_detection(model, device, class_weights, run_path, init_epoch, train_loader, val_loader, validation_id,
                            gsd, checkpoint, configs, model_configs, rep_i, wandb=None):
     '''
     Train a model for Change Detection using a single satellite source.
+    Supports multiple event types (wildfire, drought, etc.)
     '''
     print(f'\n===== REP {rep_i} =====\n')
+    
+    # Get event type and corresponding class labels
+    event_type = configs.get('event_type', 'wildfire')
+    class_labels = get_class_labels(event_type)
 
     (run_path / 'checkpoints' / f'{rep_i}').mkdir(parents=True, exist_ok=True)
 
@@ -171,16 +187,16 @@ def train_change_detection(model, device, class_weights, run_path, init_epoch, t
                 f'({rep_i}) Epoch': epoch,
                 f'({rep_i}) Iteration': index,
                 f'({rep_i}) Train Loss': loss_val,
-                f'({rep_i}) Train Accuracy ({CLASS_LABELS[0]})': 100 * acc[0].item(),
-                f'({rep_i}) Train Accuracy ({CLASS_LABELS[1]})': 100 * acc[1].item(),
-                f'({rep_i}) Train F-Score ({CLASS_LABELS[0]})': 100 * score[0].item(),
-                f'({rep_i}) Train F-Score ({CLASS_LABELS[1]})': 100 * score[1].item(),
-                f'({rep_i}) Train Precision ({CLASS_LABELS[0]})': 100 * prec[0].item(),
-                f'({rep_i}) Train Precision ({CLASS_LABELS[1]})': 100 * prec[1].item(),
-                f'({rep_i}) Train Recall ({CLASS_LABELS[0]})': 100 * rec[0].item(),
-                f'({rep_i}) Train Recall ({CLASS_LABELS[1]})': 100 * rec[1].item(),
-                f'({rep_i}) Train IoU ({CLASS_LABELS[0]})': 100 * ious[0].item(),
-                f'({rep_i}) Train IoU ({CLASS_LABELS[1]})': 100 * ious[1].item(),
+                f'({rep_i}) Train Accuracy ({class_labels[0]})': 100 * acc[0].item(),
+                f'({rep_i}) Train Accuracy ({class_labels[1]})': 100 * acc[1].item(),
+                f'({rep_i}) Train F-Score ({class_labels[0]})': 100 * score[0].item(),
+                f'({rep_i}) Train F-Score ({class_labels[1]})': 100 * score[1].item(),
+                f'({rep_i}) Train Precision ({class_labels[0]})': 100 * prec[0].item(),
+                f'({rep_i}) Train Precision ({class_labels[1]})': 100 * prec[1].item(),
+                f'({rep_i}) Train Recall ({class_labels[0]})': 100 * rec[0].item(),
+                f'({rep_i}) Train Recall ({class_labels[1]})': 100 * rec[1].item(),
+                f'({rep_i}) Train IoU ({class_labels[0]})': 100 * ious[0].item(),
+                f'({rep_i}) Train IoU ({class_labels[1]})': 100 * ious[1].item(),
                 f'({rep_i}) Train MeanIoU': mean_iou * 100,
                 f'({rep_i}) lr': lr_scheduler.get_last_lr()[0]
             }
@@ -220,6 +236,10 @@ def train_change_detection(model, device, class_weights, run_path, init_epoch, t
 
 def eval_change_detection(model, device, class_weights, init_epoch, loader, validation_id, gsd,
                           mode, configs, model_configs, rep_i, wandb=None, run_path=None):
+    # Get event type and corresponding class labels
+    event_type = configs.get('event_type', 'wildfire')
+    class_labels = get_class_labels(event_type)
+    
     cm, iou = initialize_metrics(configs, device)
 
     if configs['train']['log_landcover_metrics']:
@@ -332,11 +352,11 @@ def eval_change_detection(model, device, class_weights, init_epoch, loader, vali
                 masks={
                     "predictions": {
                         "mask_data": prediction_wand.float().numpy(),
-                        "class_labels": CLASS_LABELS
+                        "class_labels": class_labels
                     },
                     "ground_truth": {
                         "mask_data": label_wand.float().numpy(),
-                        "class_labels": CLASS_LABELS
+                        "class_labels": class_labels
                     },
                 }
             )
@@ -346,11 +366,11 @@ def eval_change_detection(model, device, class_weights, init_epoch, loader, vali
                 masks={
                     "predictions": {
                         "mask_data": prediction_wand.float().numpy(),
-                        "class_labels": CLASS_LABELS
+                        "class_labels": class_labels
                     },
                     "ground_truth": {
                         "mask_data": label_wand.float().numpy(),
-                        "class_labels": CLASS_LABELS
+                        "class_labels": class_labels
                     },
                 }
             )
@@ -363,11 +383,11 @@ def eval_change_detection(model, device, class_weights, init_epoch, loader, vali
                 masks={
                     "predictions": {
                         "mask_data": prediction_wand.float().numpy(),
-                        "class_labels": CLASS_LABELS
+                        "class_labels": class_labels
                     },
                     "ground_truth": {
                         "mask_data": label_wand.float().numpy(),
-                        "class_labels": CLASS_LABELS
+                        "class_labels": class_labels
                     },
                 }
             )
@@ -377,11 +397,11 @@ def eval_change_detection(model, device, class_weights, init_epoch, loader, vali
                 masks={
                     "predictions": {
                         "mask_data": prediction_wand.float().numpy(),
-                        "class_labels": CLASS_LABELS
+                        "class_labels": class_labels
                     },
                     "ground_truth": {
                         "mask_data": label_wand.float().numpy(),
-                        "class_labels": CLASS_LABELS
+                        "class_labels": class_labels
                     },
                 }
             )
@@ -391,11 +411,11 @@ def eval_change_detection(model, device, class_weights, init_epoch, loader, vali
                 masks={
                     "predictions": {
                         "mask_data": prediction_wand.float().numpy(),
-                        "class_labels": CLASS_LABELS
+                        "class_labels": class_labels
                     },
                     "ground_truth": {
                         "mask_data": label_wand.float().numpy(),
-                        "class_labels": CLASS_LABELS
+                        "class_labels": class_labels
                     },
                 }
             )
@@ -405,11 +425,11 @@ def eval_change_detection(model, device, class_weights, init_epoch, loader, vali
                 masks={
                     "predictions": {
                         "mask_data": prediction_wand.float().numpy(),
-                        "class_labels": CLASS_LABELS
+                        "class_labels": class_labels
                     },
                     "ground_truth": {
                         "mask_data": label_wand.float().numpy(),
-                        "class_labels": CLASS_LABELS
+                        "class_labels": class_labels
                     },
                 }
             )
@@ -420,30 +440,30 @@ def eval_change_detection(model, device, class_weights, init_epoch, loader, vali
 
     if configs['wandb']['activate']:
         wandb.log({
-            f'({rep_i}) {mode} F-Score ({CLASS_LABELS[0]})': 100 * score[0].item(),
-            f'({rep_i}) {mode} F-Score ({CLASS_LABELS[1]})': 100 * score[1].item(),
-            f'({rep_i}) {mode} IoU ({CLASS_LABELS[0]})': 100 * ious[0],
-            f'({rep_i}) {mode} IoU ({CLASS_LABELS[1]})': 100 * ious[1],
-            f'({rep_i}) {mode} Precision ({CLASS_LABELS[0]})': 100 * prec[0].item(),
-            f'({rep_i}) {mode} Precision ({CLASS_LABELS[1]})': 100 * prec[1].item(),
-            f'({rep_i}) {mode} Recall ({CLASS_LABELS[0]})': 100 * rec[0].item(),
-            f'({rep_i}) {mode} Recall ({CLASS_LABELS[1]})': 100 * rec[1].item(),
-            f'({rep_i}) {mode} Accuracy ({CLASS_LABELS[0]})': 100 * acc[0].item(),
-            f'({rep_i}) {mode} Accuracy ({CLASS_LABELS[1]})': 100 * acc[1].item(),
+            f'({rep_i}) {mode} F-Score ({class_labels[0]})': 100 * score[0].item(),
+            f'({rep_i}) {mode} F-Score ({class_labels[1]})': 100 * score[1].item(),
+            f'({rep_i}) {mode} IoU ({class_labels[0]})': 100 * ious[0],
+            f'({rep_i}) {mode} IoU ({class_labels[1]})': 100 * ious[1],
+            f'({rep_i}) {mode} Precision ({class_labels[0]})': 100 * prec[0].item(),
+            f'({rep_i}) {mode} Precision ({class_labels[1]})': 100 * prec[1].item(),
+            f'({rep_i}) {mode} Recall ({class_labels[0]})': 100 * rec[0].item(),
+            f'({rep_i}) {mode} Recall ({class_labels[1]})': 100 * rec[1].item(),
+            f'({rep_i}) {mode} Accuracy ({class_labels[0]})': 100 * acc[0].item(),
+            f'({rep_i}) {mode} Accuracy ({class_labels[1]})': 100 * acc[1].item(),
             f'({rep_i}) {mode} MeanIoU': 100 * mean_iou.item(),
             f'({rep_i}) {mode} Loss': total_loss / len(loader)
         })
     elif mode == 'test':
-        print(f'({rep_i}) {mode} F-Score ({CLASS_LABELS[0]}): {100 * score[0].item()}')
-        print(f'({rep_i}) {mode} F-Score ({CLASS_LABELS[1]}): {100 * score[1].item()}')
-        print(f'({rep_i}) {mode} IoU ({CLASS_LABELS[0]}): {100 * ious[0]}')
-        print(f'({rep_i}) {mode} IoU ({CLASS_LABELS[1]}): {100 * ious[1]}')
-        print(f'({rep_i}) {mode} Precision ({CLASS_LABELS[0]}): {100 * prec[0].item()}')
-        print(f'({rep_i}) {mode} Precision ({CLASS_LABELS[1]}): {100 * prec[1].item()}')
-        print(f'({rep_i}) {mode} Recall ({CLASS_LABELS[0]}): {100 * rec[0].item()}')
-        print(f'({rep_i}) {mode} Recall ({CLASS_LABELS[1]}): {100 * rec[1].item()}')
-        print(f'({rep_i}) {mode} Accuracy ({CLASS_LABELS[0]}): {100 * acc[0].item()}')
-        print(f'({rep_i}) {mode} Accuracy ({CLASS_LABELS[1]}): {100 * acc[1].item()}')
+        print(f'({rep_i}) {mode} F-Score ({class_labels[0]}): {100 * score[0].item()}')
+        print(f'({rep_i}) {mode} F-Score ({class_labels[1]}): {100 * score[1].item()}')
+        print(f'({rep_i}) {mode} IoU ({class_labels[0]}): {100 * ious[0]}')
+        print(f'({rep_i}) {mode} IoU ({class_labels[1]}): {100 * ious[1]}')
+        print(f'({rep_i}) {mode} Precision ({class_labels[0]}): {100 * prec[0].item()}')
+        print(f'({rep_i}) {mode} Precision ({class_labels[1]}): {100 * prec[1].item()}')
+        print(f'({rep_i}) {mode} Recall ({class_labels[0]}): {100 * rec[0].item()}')
+        print(f'({rep_i}) {mode} Recall ({class_labels[1]}): {100 * rec[1].item()}')
+        print(f'({rep_i}) {mode} Accuracy ({class_labels[0]}): {100 * acc[0].item()}')
+        print(f'({rep_i}) {mode} Accuracy ({class_labels[1]}): {100 * acc[1].item()}')
         print(f'({rep_i}) {mode} MeanIoU {100 * mean_iou.item()}')
 
         if configs['train']['log_landcover_metrics']:

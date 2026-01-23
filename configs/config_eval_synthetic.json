@@ -1,6 +1,7 @@
 {
     "method": "bam_cd",
     "mode": "eval",
+    "event_type": "wildfire",
     "dataset_type": "sen2_20_mod_500",
     "distributed": false,
     "num_workers": 6,

@@ -16,15 +16,17 @@
 
 ## 🎯 Project Overview
 
-**FLOGA** is a machine learning ready dataset and benchmark for **burnt area mapping** using satellite imagery. The project implements multiple state-of-the-art deep learning models for **change detection** to identify areas affected by wildfires.
+**Wildfire Impact** is an extended version of the FLOGA project that implements a **multi-hazard detection framework** for both **wildfire burnt area mapping** and **drought impact assessment** using satellite imagery. The project implements multiple state-of-the-art deep learning models for **change detection** to identify areas affected by different environmental hazards.
 
 ### Key Features:
-- **Task**: Binary change detection (burnt vs. unburnt areas)
+- **Task**: Multi-hazard change detection (wildfire and drought)
+- **Supported Hazards**: Wildfire (burnt areas) and Drought (vegetation stress)
 - **Data Sources**: Sentinel-2 and MODIS satellite imagery
-- **Input**: Bi-temporal images (before and after fire events)
-- **Output**: Pixel-wise classification maps
-- **Region**: Greece (326 wildfire events, 2017-2021)
-- **Ground Truth**: High-resolution burnt area mappings from Hellenic Fire Service
+- **Input**: Bi-temporal images (before and after events)
+- **Output**: Pixel-wise classification maps with event-type-specific labels
+- **Region**: Greece (326 wildfire events, 2017-2021) + Expandable to drought data
+- **Ground Truth**: High-resolution mappings from Hellenic Fire Service
+- **Multi-Hazard Support**: Dynamic class label switching based on event type
 
 ---
 

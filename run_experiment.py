@@ -129,6 +129,10 @@ if __name__ == '__main__':
 
     configs['paths']['run_path'] = run_path
 
+    # Log event type being used
+    event_type = configs.get('event_type', 'wildfire')
+    print(f'{font_colors.CYAN}Using event type: {event_type}{font_colors.ENDC}')
+
     if configs['mode'] == 'train':
         # --- Train model ---
 
@@ -184,7 +188,14 @@ if __name__ == '__main__':
         if (configs['mode'] == 'eval') and configs['wandb']['activate'] and (rep_i == 0):
             wandb = init_wandb(model, run_path, configs, model_configs)
 
-        ckpt_path = run_path / 'checkpoints' / f'{rep_i}' / 'best_segmentation.pt'
+        # Determine checkpoint path based on mode
+        if configs['mode'] == 'eval' and 'load_state' in configs['paths']:
+            # In eval mode, use the load_state path from config
+            ckpt_path = Path(configs['paths']['load_state'])
+        else:
+            # In train mode, use the training checkpoint directory
+            ckpt_path = run_path / 'checkpoints' / f'{rep_i}' / 'best_segmentation.pt'
+        
         checkpoint = torch.load(ckpt_path, map_location=device)
         print(f'\n{font_colors.CYAN}Loading {ckpt_path}...{font_colors.ENDC}')
 

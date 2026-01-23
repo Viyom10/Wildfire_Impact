@@ -21,6 +21,7 @@ class Dataset(torch.utils.data.Dataset):
     def __init__(self, mode, configs, clc=False, clouds=False, sea=False):
         self.mode = mode
         self.configs = configs
+        self.event_type = configs.get('event_type', 'wildfire')  # Default to wildfire for backward compatibility
 
         self.augmentation = configs['datasets']['augmentation']
 
@@ -29,7 +30,20 @@ class Dataset(torch.utils.data.Dataset):
         # Read the pickle files containing information on the splits
         patches = pickle.load(open(self.ds_path / configs['datasets'][mode], 'rb'))
 
-        self.events_df = pd.DataFrame([{**{'sample_key': k}, **patches[k]} for k in sorted(list(patches.keys()))])
+        # Filter patches by event_type if specified
+        if self.event_type != 'all':
+            patches = {k: v for k, v in patches.items() if v.get('event_type', 'wildfire') == self.event_type}
+
+        # Build DataFrame with all patch information
+        df_list = []
+        for k in sorted(list(patches.keys())):
+            patch_info = {**{'sample_key': k}, **patches[k]}
+            # Ensure positive_flag exists (for backward compatibility with older datasets)
+            if 'positive_flag' not in patch_info:
+                patch_info['positive_flag'] = False
+            df_list.append(patch_info)
+        
+        self.events_df = pd.DataFrame(df_list)
 
         # Keep the positive indices in a separate list (useful for under/oversampling)
         self.positives_idx = list(self.events_df[self.events_df['positive_flag']]['sample_key'].values)
@@ -55,11 +69,12 @@ class Dataset(torch.utils.data.Dataset):
         '''
         Scales the given images with the method defined in the config file.
         The input `sample` is a dictionary mapping image name -> image array.
+        Handles both wildfire and drought detection tasks.
         '''
         scaled_sample = sample.copy()
 
         for sample_name, sample_img in sample.items():
-            if ('label' in sample_name) or ('cloud' in sample_name) or ('key' in sample_name) or ('positive' in sample_name) or ('sea' in sample_name) or ('clc' in sample_name):
+            if ('label' in sample_name) or ('cloud' in sample_name) or ('key' in sample_name) or ('positive' in sample_name) or ('sea' in sample_name) or ('clc' in sample_name) or ('event_type' in sample_name):
                 scaled_sample[sample_name] = sample_img
             elif self.configs['datasets']['scale_input'] == 'normalize':
                 if 'S2' in sample_name:

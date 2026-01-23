@@ -298,7 +298,7 @@ def export_patches(floga_path, out_path, out_size, out_format, sea_ratio):
     return
 
 
-def export_csv_with_patch_paths(events_list, out_path, mode, random_seed, split_mode, ratio, train_years, test_years, suffix=None, sampling=None):
+def export_csv_with_patch_paths(events_list, out_path, mode, random_seed, split_mode, ratio, train_years, test_years, suffix=None, sampling=None, event_type='wildfire'):
     '''
     Exports the paths of the selected events into pickle files, one file per split (train/val/test).
     Each pickle file contains a dictionary of the form e.g.:
@@ -308,6 +308,7 @@ def export_csv_with_patch_paths(events_list, out_path, mode, random_seed, split_
                 positive_flag: <path to flag>,
                 S2_pre_image: <path to Sentinel-2 pre-event image>,
                 S2_post_image: <path to Sentinel-2 post-event image>,
+                event_type: "wildfire" or "drought",
                 ...
             },
         }
@@ -339,6 +340,7 @@ def export_csv_with_patch_paths(events_list, out_path, mode, random_seed, split_
 
         for patch_key, files in patch_files.items():
             dct[patch_key] = {}
+            dct[patch_key]['event_type'] = event_type  # Add event type metadata
             for f in files:
                 if 'sea_mask' in f.name:
                     dct[patch_key]['sea_mask'] = f
@@ -415,12 +417,16 @@ def sample_patches(neg_ratio, d, random_seed):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Create analysis-ready dataset from FLOGA imagery.')
+    parser = argparse.ArgumentParser(description='Create analysis-ready dataset from FLOGA imagery or custom drought data.')
 
-    parser.add_argument('--floga_path', type=str, required=True,
+    parser.add_argument('--floga_path', type=str, required=False,
                         help='The path containing the FLOGA HDF files.')
+    parser.add_argument('--drought_path', type=str, required=False,
+                        help='The path containing drought event data (alternative to floga_path).')
     parser.add_argument('--out_path', type=str, required=True,
                         help='The path to save the dataset into. Default: "data/datasets/"')
+    parser.add_argument('--event_type', type=str, choices=['wildfire', 'drought'], default='wildfire', required=False,
+                        help='Type of events to process: "wildfire" for FLOGA data or "drought" for drought events. Default "wildfire".')
     parser.add_argument('--out_format', type=str, choices=['numpy', 'torch'], default='numpy', required=False,
                         help='The output format, can be either "numpy" or "torch". Default "numpy".')
     parser.add_argument('--out_size', nargs='+', required=False,
@@ -537,6 +543,6 @@ if __name__ == '__main__':
             print(f'{font_colors.CYAN}Splitting into {len(train_events_list)} train, {len(val_events_list)} val and {len(test_events_list)} test events...{font_colors.ENDC}')
 
         # Export CSV files with the paths for every split
-        export_csv_with_patch_paths(train_events_list, out_path, 'train', args.random_seed, args.split_mode, args.ratio, args.train_years, args.test_years, suffix=args.suffix, sampling=args.sample)
-        export_csv_with_patch_paths(val_events_list, out_path, 'val', args.random_seed, args.split_mode, args.ratio, args.train_years, args.test_years, suffix=args.suffix, sampling=args.sample)
-        export_csv_with_patch_paths(test_events_list, out_path, 'test', args.random_seed, args.split_mode, args.ratio, args.train_years, args.test_years, suffix=args.suffix, sampling=args.sample)
+        export_csv_with_patch_paths(train_events_list, out_path, 'train', args.random_seed, args.split_mode, args.ratio, args.train_years, args.test_years, suffix=args.suffix, sampling=args.sample, event_type=args.event_type)
+        export_csv_with_patch_paths(val_events_list, out_path, 'val', args.random_seed, args.split_mode, args.ratio, args.train_years, args.test_years, suffix=args.suffix, sampling=args.sample, event_type=args.event_type)
+        export_csv_with_patch_paths(test_events_list, out_path, 'test', args.random_seed, args.split_mode, args.ratio, args.train_years, args.test_years, suffix=args.suffix, sampling=args.sample, event_type=args.event_type)

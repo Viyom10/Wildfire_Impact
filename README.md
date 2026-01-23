@@ -1,6 +1,6 @@
-## FLOGA and BAM-CD
+## FLOGA and BAM-CD: Wildfire & Drought Impact Detection
 
-This repository contains the dataset and code for the paper **"FLOGA: A machine learning ready dataset, a benchmark and a novel deep learning model for burnt area mapping with Sentinel-2"** (Sdraka et al., 2024).
+This repository contains the dataset and code for the paper **"FLOGA: A machine learning ready dataset, a benchmark and a novel deep learning model for burnt area mapping with Sentinel-2"** (Sdraka et al., 2024). It has been extended to support **drought detection** alongside wildfire impact detection for multi-hazard change detection analysis.
 
 ## FLOGA Dataset
 
@@ -8,18 +8,28 @@ This repository contains the dataset and code for the paper **"FLOGA: A machine 
 
 You can download the FLOGA dataset from [Dropbox](https://www.dropbox.com/scl/fo/3sqbs3tioox7s5vb4jmwl/h?rlkey=5p3e7wa5al4cy9x34pmtp9g6d&dl=0).
 
+### Extended for Multi-Hazard Detection
+
+The codebase now supports detection of multiple environmental hazards:
+- **Wildfire Impact**: Burnt area mapping from pre- and post-fire imagery
+- **Drought Detection**: Vegetation stress and drought-affected areas from seasonal imagery
+
 In order to read the downloaded .hdf files, the `hdf5plugin`  python module is needed because data have been compressed using BZip2. These files include the raw Sentinel-2 and MODIS imagery aligned to a common grid, along with the labels and the various masks.
 
 #### Set up
-After downloading the .hdf files, you can create an analysis-ready dataset with the `create_dataset.py` script. This python script reads the .hdf files, crops the images into smaller patches and then performs a train/val/test split on the patches.
+After downloading the .hdf files, you can create an analysis-ready dataset with the `create_dataset.py` script. This python script reads the .hdf files, crops the images into smaller patches and performs a train/val/test split on the patches.
 
-For example,
-
+For wildfire detection:
 ```
-python create_dataset.py --floga_path path/to/hdf/files --out_path data/ --out_size 256 256 --sample 1
+python create_dataset.py --floga_path path/to/hdf/files --out_path data/ --out_size 256 256 --sample 1 --event_type wildfire
 ```
 
-The above command will crop the images into 256x256 patches and export 3 pickle files with the train, validation and test splits respectively. The option `--sample` dictates that for each positive patch (i.e. patch that contains at least 1 burnt pixel) a negative one (i.e. a patch with no burnt pixels) will be included. Run `python create_dataset.py --help` for more information on the various options.
+For drought detection (requires custom drought label dataset):
+```
+python create_dataset.py --drought_path path/to/drought/data --out_path data/ --out_size 256 256 --sample 1 --event_type drought
+```
+
+The above command will crop the images into 256x256 patches and export 3 pickle files with the train, validation and test splits respectively. The option `--sample` dictates that for each positive patch a negative one will be included. Run `python create_dataset.py --help` for more information on the various options.
 
 #### Brief description
 
@@ -32,7 +42,17 @@ FLOGA contains aligned Sentinel-2 and MODIS imagery for 326 wildfire events in G
  - Corine Land Cover mask
  - Ground truth label
 
-The labels can contain the following values: **0** for non-burnt pixels, **1** for burnt pixels, and **2** for pixels burnt in other fire events of the same year. The pixels marked with **2** may or may not contain burnt areas (this depends on the timestamps of the fires as well as the timestamps of the selected satellite imagery), so we have marked them with this unique value in order to facilitate their exclusion from the training/evaluation process.
+The labels can contain the following values:
+
+**Wildfire Detection**:
+- **0** = Non-burnt pixels
+- **1** = Burnt pixels
+- **2** = Pixels burnt in other fire events (same year) - **excluded from training/evaluation**
+
+**Drought Detection**:
+- **0** = Non-drought affected pixels
+- **1** = Drought-affected pixels
+- **2** = Pixels with mixed or uncertain drought status (same period) - **excluded from training/evaluation**
 
 #### Dataset exploration
 A useful notebook with an exploration of the dataset can be found in `Data_exploration.ipynb`.
