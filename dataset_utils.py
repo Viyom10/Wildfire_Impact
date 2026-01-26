@@ -46,7 +46,10 @@ class Dataset(torch.utils.data.Dataset):
         self.events_df = pd.DataFrame(df_list)
 
         # Keep the positive indices in a separate list (useful for under/oversampling)
-        self.positives_idx = list(self.events_df[self.events_df['positive_flag']]['sample_key'].values)
+        if 'positive_flag' in self.events_df.columns:
+            self.positives_idx = list(self.events_df[self.events_df['positive_flag']]['sample_key'].values)
+        else:
+            self.positives_idx = []
 
         # format: "sen2_xx_mod_yy"
         tmp = configs['dataset_type'].split('_')
