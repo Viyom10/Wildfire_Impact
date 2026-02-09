@@ -270,7 +270,7 @@ def predict(model, device, before_img, after_img):
     return pred_mask, prob_map
 
 
-def visualize_results(before_img, after_img, pred_mask, prob_map, output_path=None, show=True):
+def visualize_results(before_img, after_img, pred_mask, prob_map, output_path=None, show=True, event_type='wildfire'):
     """
     Create visualization of the prediction results.
     
@@ -288,6 +288,8 @@ def visualize_results(before_img, after_img, pred_mask, prob_map, output_path=No
         Path to save the visualization
     show : bool
         Whether to display the plot
+    event_type : str
+        Type of event: 'wildfire' or 'drought'
     """
     fig, axes = plt.subplots(2, 3, figsize=(15, 10))
     
@@ -333,28 +335,44 @@ def visualize_results(before_img, after_img, pred_mask, prob_map, output_path=No
     axes[1, 0].set_title('After (False Color NIR-R-G)', fontsize=12)
     axes[1, 0].axis('off')
     
+    # Set labels based on event type
+    if event_type == 'drought':
+        prob_label = 'Drought Probability'
+        detect_label = 'Detected Drought Areas (Orange)'
+        overlay_color = [1, 0.5, 0]  # Orange for drought
+        title_prefix = 'Drought Impact Detection'
+        area_label = 'Drought Area'
+        cmap = 'YlOrBr'
+    else:
+        prob_label = 'Burn Probability'
+        detect_label = 'Detected Burn Areas (Red)'
+        overlay_color = [1, 0, 0]  # Red for burnt
+        title_prefix = 'Wildfire Impact Detection'
+        area_label = 'Burnt Area'
+        cmap = 'RdYlGn_r'
+    
     # Probability map
-    im = axes[1, 1].imshow(prob_map, cmap='RdYlGn_r', vmin=0, vmax=1)
-    axes[1, 1].set_title('Burn Probability', fontsize=12)
+    im = axes[1, 1].imshow(prob_map, cmap=cmap, vmin=0, vmax=1)
+    axes[1, 1].set_title(prob_label, fontsize=12)
     axes[1, 1].axis('off')
     plt.colorbar(im, ax=axes[1, 1], fraction=0.046, pad=0.04)
     
     # Binary prediction overlay
     overlay = to_rgb(after_img).copy()
-    # Create red overlay for burnt areas
-    burn_mask = pred_mask == 1
-    overlay[burn_mask] = [1, 0, 0]  # Red for burnt
+    # Create overlay for affected areas
+    affected_mask = pred_mask == 1
+    overlay[affected_mask] = overlay_color
     
     axes[1, 2].imshow(overlay)
-    axes[1, 2].set_title('Detected Burn Areas (Red)', fontsize=12)
+    axes[1, 2].set_title(detect_label, fontsize=12)
     axes[1, 2].axis('off')
     
     # Add statistics
     total_pixels = pred_mask.size
-    burnt_pixels = burn_mask.sum()
-    burnt_percentage = (burnt_pixels / total_pixels) * 100
+    affected_pixels = affected_mask.sum()
+    affected_percentage = (affected_pixels / total_pixels) * 100
     
-    fig.suptitle(f'Wildfire Impact Detection\nBurnt Area: {burnt_pixels:,} pixels ({burnt_percentage:.2f}%)', 
+    fig.suptitle(f'{title_prefix}\n{area_label}: {affected_pixels:,} pixels ({affected_percentage:.2f}%)', 
                  fontsize=14, fontweight='bold')
     
     plt.tight_layout()
@@ -371,9 +389,11 @@ def visualize_results(before_img, after_img, pred_mask, prob_map, output_path=No
     return fig
 
 
-def run_demo():
+def run_demo(event_type='wildfire'):
     """Run prediction on sample data to demonstrate the pipeline."""
-    print(f"\n{font_colors.BOLD}🔥 Running Demo with Synthetic Data{font_colors.ENDC}\n")
+    event_emoji = '🏜️' if event_type == 'drought' else '🔥'
+    event_name = 'Drought' if event_type == 'drought' else 'Wildfire'
+    print(f"\n{font_colors.BOLD}{event_emoji} Running {event_name} Demo with Synthetic Data{font_colors.ENDC}\n")
     
     # Load sample images
     data_dir = Path('data/processed/2024')
@@ -419,7 +439,7 @@ def run_demo():
     # Visualize
     output_path = Path('results/demo_prediction.png')
     output_path.parent.mkdir(exist_ok=True, parents=True)
-    visualize_results(before_img, after_img, pred_mask, prob_map, output_path=str(output_path))
+    visualize_results(before_img, after_img, pred_mask, prob_map, output_path=str(output_path), event_type=event_type)
     
     return pred_mask, prob_map
 
@@ -448,27 +468,39 @@ def main():
                         help='Run demo with sample data')
     parser.add_argument('--threshold', type=float, default=0.5,
                         help='Probability threshold for binary prediction (default: 0.5)')
+    parser.add_argument('--drought', action='store_true',
+                        help='Run in drought detection mode instead of wildfire')
     
     args = parser.parse_args()
     
+    # Determine event type
+    event_type = 'drought' if args.drought else 'wildfire'
+    event_emoji = '🏜️' if args.drought else '🔥'
+    event_name = 'Drought' if args.drought else 'Wildfire'
+    
     print(f"\n{font_colors.BOLD}{'='*60}")
-    print(f"🔥 Wildfire Impact Detection from Satellite Images")
+    print(f"{event_emoji} {event_name} Impact Detection from Satellite Images")
     print(f"{'='*60}{font_colors.ENDC}\n")
     
     # Run demo if requested
     if args.demo:
-        run_demo()
+        run_demo(event_type=event_type)
         return
     
     # Check required arguments
     if not args.before or not args.after:
         parser.error("--before and --after are required (or use --demo for demo mode)")
     
-    # Load model
+    # Load model with appropriate config
+    config_path = args.config
+    if args.drought and args.config == 'configs/config_eval_synthetic.json':
+        config_path = 'configs/config_eval_synthetic_drought.json'
+    
     print("📦 Loading pre-trained model...")
-    model, device, configs = load_model(args.config)
+    model, device, configs = load_model(config_path)
     print(f"   Device: {device}")
     print(f"   Model: BAM-CD")
+    print(f"   Mode: {event_name} Detection")
     
     # Load images
     print(f"\n📷 Loading images...")
@@ -506,15 +538,19 @@ def main():
     
     # Calculate statistics
     total_pixels = pred_mask.size
-    burnt_pixels = (pred_mask == 1).sum()
-    burnt_percentage = (burnt_pixels / total_pixels) * 100
+    affected_pixels = (pred_mask == 1).sum()
+    affected_percentage = (affected_pixels / total_pixels) * 100
+    
+    # Labels based on mode
+    area_label = 'Drought' if args.drought else 'Burnt'
+    prob_label = 'drought' if args.drought else 'burn'
     
     print(f"\n{font_colors.GREEN}📊 Results:{font_colors.ENDC}")
-    print(f"   Total pixels:  {total_pixels:,}")
-    print(f"   Burnt pixels:  {burnt_pixels:,}")
-    print(f"   Burnt area:    {burnt_percentage:.2f}%")
-    print(f"   Avg burn prob: {prob_map.mean():.4f}")
-    print(f"   Max burn prob: {prob_map.max():.4f}")
+    print(f"   Total pixels:     {total_pixels:,}")
+    print(f"   {area_label} pixels:  {affected_pixels:,}")
+    print(f"   {area_label} area:    {affected_percentage:.2f}%")
+    print(f"   Avg {prob_label} prob: {prob_map.mean():.4f}")
+    print(f"   Max {prob_label} prob: {prob_map.max():.4f}")
     
     # Save outputs if requested
     if args.output_mask:
@@ -533,7 +569,8 @@ def main():
     visualize_results(
         before_img, after_img, pred_mask, prob_map,
         output_path=output_path,
-        show=not args.no_show
+        show=not args.no_show,
+        event_type=event_type
     )
     
     print(f"\n{font_colors.GREEN}✅ Done!{font_colors.ENDC}\n")
