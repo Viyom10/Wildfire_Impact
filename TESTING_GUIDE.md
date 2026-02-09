@@ -150,4 +150,68 @@ x## 🔧 Troubleshooting
 
 ---
 
-*Last Updated: January 27, 2026*
+## 🖼️ Predict from Images
+
+Use `predict_from_images.py` to run predictions on your own satellite images.
+
+### 🍎 Mac / Linux
+
+```bash
+# Wildfire detection with RGB images
+python3 predict_from_images.py --before path/to/before.jpg --after path/to/after.jpg --rgb --output results/wildfire_result.png
+
+# Drought detection with RGB images
+python3 predict_from_images.py --before path/to/before.jpg --after path/to/after.jpg --rgb --drought --output results/drought_result.png
+
+# Example with Goa test images (wildfire)
+python3 predict_from_images.py --before goa_test/goa_before.jpg --after goa_test/goa_after.jpg --rgb --output goa_test/result.png
+
+# Example with Goa test images (drought)
+python3 predict_from_images.py --before goa_test/goa_before.jpg --after goa_test/goa_after.jpg --rgb --drought --output goa_test/drought_result.png
+
+# Run demo with synthetic data
+python3 predict_from_images.py --demo
+```
+
+### 🪟 Windows
+
+```cmd
+:: Wildfire detection with RGB images
+python predict_from_images.py --before path/to/before.jpg --after path/to/after.jpg --rgb --output results/wildfire_result.png
+
+:: Drought detection with RGB images
+python predict_from_images.py --before path/to/before.jpg --after path/to/after.jpg --rgb --drought --output results/drought_result.png
+
+:: Example with Goa test images (wildfire)
+python predict_from_images.py --before goa_test/goa_before.jpg --after goa_test/goa_after.jpg --rgb --output goa_test/result.png
+
+:: Example with Goa test images (drought)
+python predict_from_images.py --before goa_test/goa_before.jpg --after goa_test/goa_after.jpg --rgb --drought --output goa_test/drought_result.png
+
+:: Run demo with synthetic data
+python predict_from_images.py --demo
+```
+
+### Available Options
+
+| Option | Description |
+|--------|-------------|
+| `--before` | Path to before image (required) |
+| `--after` | Path to after image (required) |
+| `--rgb` | Use when input is RGB (3-channel) images |
+| `--drought` | Run drought detection instead of wildfire |
+| `--output` | Path to save visualization |
+| `--output-mask` | Path to save binary prediction mask (.npy) |
+| `--output-prob` | Path to save probability map (.npy) |
+| `--threshold` | Probability threshold (default: 0.5) |
+| `--no-show` | Don't display visualization window |
+| `--demo` | Run demo with synthetic data |
+
+### Supported Image Formats
+- **GeoTIFF** (.tif, .tiff) - Preferred for satellite imagery
+- **NumPy arrays** (.npy) - Direct array input
+- **Standard images** (.png, .jpg, .jpeg) - Use with `--rgb` flag
+
+---
+
+*Last Updated: February 10, 2026*
