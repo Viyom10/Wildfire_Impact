@@ -13,3 +13,12 @@ pyjson5
 h5py
 hdf5plugin
 segmentation-models-pytorch
+
+# Web Interface (optional)
+gradio>=4.0.0
+scipy
+Pillow
+
+# GeoTIFF Support (optional)
+rasterio
+tifffile

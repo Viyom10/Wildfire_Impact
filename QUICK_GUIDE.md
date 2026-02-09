@@ -101,7 +101,54 @@ python visualize_predictions.py --config configs/config.json --mode test
 
 ---
 
-## 6. Key Configuration Options
+## 6. 🆕 Upload Your Own Satellite Images
+
+### Command Line Tool
+```bash
+# Using your own images (before and after fire)
+python predict_from_images.py --before path/to/before.tif --after path/to/after.tif
+
+# Using RGB images (automatically converted)
+python predict_from_images.py --before before.png --after after.png --rgb
+
+# Save results
+python predict_from_images.py --before before.tif --after after.tif \
+    --output results/my_prediction.png \
+    --output-mask results/mask.npy
+
+# Run demo with synthetic data
+python predict_from_images.py --demo
+
+# Adjust detection sensitivity
+python predict_from_images.py --before before.tif --after after.tif --threshold 0.3
+```
+
+### Web Interface (Drag & Drop)
+```bash
+# Install Gradio first
+pip install gradio
+
+# Launch web interface
+python web_interface.py
+
+# Open http://localhost:7860 in your browser
+```
+
+### Supported Formats
+| Format | Best For |
+|--------|----------|
+| **GeoTIFF** (.tif) | Actual Sentinel-2 data (9 bands) |
+| **NumPy** (.npy) | Direct array input |
+| **PNG/JPG** | RGB photos (converted automatically) |
+
+### Expected Input
+- **Ideal**: 9-band Sentinel-2 imagery (20m resolution)
+- **Bands**: B02, B03, B04, B05, B06, B07, B11, B12, B8A
+- **RGB fallback**: Automatically approximated to 9 channels
+
+---
+
+## 7. Key Configuration Options
 
 ```json
 {
