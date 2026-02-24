@@ -36,6 +36,9 @@ from pathlib import Path
 import torch
 import pyjson5
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+import matplotlib.gridspec as gridspec
+from matplotlib.colors import ListedColormap, BoundaryNorm
 from PIL import Image
 import warnings
 
@@ -126,8 +129,9 @@ def adjust_channels(img, target_channels):
     Adjust image to have the correct number of channels.
     
     For RGB images (3 channels) being converted to 9 channels:
-    - The model expects specific Sentinel-2 bands
-    - We replicate and transform RGB to approximate the spectral response
+    - CRITICAL: NIR must be significantly BRIGHTER than SWIR for vegetation,
+      otherwise NDVI/NBR collapse to 0 and no change is detected.
+    - In real Sentinel-2 data, healthy vegetation has high NIR and low SWIR.
     """
     current_channels = img.shape[0]
     
@@ -136,20 +140,24 @@ def adjust_channels(img, target_channels):
     
     if current_channels == 3 and target_channels == 9:
         # RGB to 9-channel approximation
-        # Map RGB to approximate Sentinel-2 bands
-        # B02 (Blue), B03 (Green), B04 (Red), B05-B07 (Red Edge), B11-B12 (SWIR), B8A (NIR)
+        # Band order: B02, B03, B04, B05, B06, B07, B11, B12, B8A
         r, g, b = img[0], img[1], img[2]
         
-        # Create approximate band mappings
-        b02 = b  # Blue
-        b03 = g  # Green
-        b04 = r  # Red
-        b05 = (r + g) / 2  # Red Edge 1 (approx)
-        b06 = (r * 0.7 + g * 0.3)  # Red Edge 2 (approx)
-        b07 = r * 0.8 + g * 0.2  # Red Edge 3 (approx)
-        b11 = (r + b) / 2  # SWIR 1 (approx)
-        b12 = r * 0.6 + b * 0.4  # SWIR 2 (approx)
-        b8a = (r + g + b) / 3  # NIR (approx)
+        # Key insight: green pixels indicate vegetation → high NIR, low SWIR
+        # Green channel dominance is a strong proxy for vegetation presence.
+        green_frac = g / (r + g + b + 1e-8)  # 0–1, high = vegetated
+        
+        b02 = b                                    # Blue
+        b03 = g                                    # Green
+        b04 = r                                    # Red
+        b05 = r * 0.6 + g * 0.4                    # Red Edge 1
+        b06 = r * 0.4 + g * 0.6                    # Red Edge 2
+        b07 = r * 0.3 + g * 0.7                    # Red Edge 3
+        # SWIR bands: low for vegetation, moderate for bare soil
+        b11 = r * 0.5 + b * 0.3 + g * 0.2          # SWIR1 — modest values
+        b12 = r * 0.6 + b * 0.4                    # SWIR2 — lowest for vegetation
+        # NIR: MUCH higher for vegetation (green pixels → high NIR)
+        b8a = g * 1.8 + r * 0.3                    # NIR — dominated by green
         
         img = np.stack([b02, b03, b04, b05, b06, b07, b11, b12, b8a], axis=0)
         
@@ -157,13 +165,11 @@ def adjust_channels(img, target_channels):
         print(f"     Note: For best results, use actual Sentinel-2 multispectral data")
         
     elif current_channels < target_channels:
-        # Replicate channels to reach target
         repeats = target_channels // current_channels + 1
         img = np.tile(img, (repeats, 1, 1))[:target_channels]
         print(f"  ⚠️  Replicated {current_channels} channels to {target_channels}")
         
     elif current_channels > target_channels:
-        # Take first N channels
         img = img[:target_channels]
         print(f"  ⚠️  Truncated {current_channels} channels to {target_channels}")
     
@@ -270,122 +276,239 @@ def predict(model, device, before_img, after_img):
     return pred_mask, prob_map
 
 
-def visualize_results(before_img, after_img, pred_mask, prob_map, output_path=None, show=True, event_type='wildfire'):
+def visualize_results(before_img, after_img, pred_mask, prob_map, output_path=None,
+                      show=True, event_type='wildfire', hazard_result=None):
     """
-    Create visualization of the prediction results.
-    
-    Parameters:
-    -----------
-    before_img : numpy.ndarray
-        Before image (C, H, W)
-    after_img : numpy.ndarray
-        After image (C, H, W)
-    pred_mask : numpy.ndarray
-        Binary prediction mask
-    prob_map : numpy.ndarray
-        Probability map
-    output_path : str, optional
-        Path to save the visualization
-    show : bool
-        Whether to display the plot
-    event_type : str
-        Type of event: 'wildfire' or 'drought'
+    Create comprehensive visualization with color-coded severity map,
+    detailed pixel-wise statistics, and proper legends.
     """
-    fig, axes = plt.subplots(2, 3, figsize=(15, 10))
-    
-    # Helper to create RGB composite
+    # ── helpers ──────────────────────────────────────────────────────
     def to_rgb(img, bands=[2, 1, 0]):
-        """Convert multi-channel image to RGB for visualization."""
         if img.shape[0] >= 3:
             rgb = img[bands].transpose(1, 2, 0)
         else:
             rgb = np.stack([img[0]] * 3, axis=-1)
-        
-        # Normalize for display
         rgb = (rgb - rgb.min()) / (rgb.max() - rgb.min() + 1e-8)
         return np.clip(rgb, 0, 1)
-    
-    # Create false color composite (NIR-R-G like bands 8A-4-3)
+
     def to_false_color(img, bands=[8, 2, 1]):
-        """Create false color composite for better vegetation/burn visualization."""
         if img.shape[0] >= 9:
             fc = img[bands].transpose(1, 2, 0)
         else:
             return to_rgb(img)
         fc = (fc - fc.min()) / (fc.max() - fc.min() + 1e-8)
         return np.clip(fc, 0, 1)
-    
-    # Row 1: Before/After images
-    axes[0, 0].imshow(to_rgb(before_img))
-    axes[0, 0].set_title('Before (RGB)', fontsize=12)
-    axes[0, 0].axis('off')
-    
-    axes[0, 1].imshow(to_rgb(after_img))
-    axes[0, 1].set_title('After (RGB)', fontsize=12)
-    axes[0, 1].axis('off')
-    
-    # Difference image
-    diff = np.abs(after_img - before_img).mean(axis=0)
-    axes[0, 2].imshow(diff, cmap='hot')
-    axes[0, 2].set_title('Change Magnitude', fontsize=12)
-    axes[0, 2].axis('off')
-    
-    # Row 2: False color and predictions
-    axes[1, 0].imshow(to_false_color(after_img))
-    axes[1, 0].set_title('After (False Color NIR-R-G)', fontsize=12)
-    axes[1, 0].axis('off')
-    
-    # Set labels based on event type
+
+    # ── event-specific config ──────────────────────────────────────
     if event_type == 'drought':
-        prob_label = 'Drought Probability'
-        detect_label = 'Detected Drought Areas (Orange)'
-        overlay_color = [1, 0.5, 0]  # Orange for drought
-        title_prefix = 'Drought Impact Detection'
-        area_label = 'Drought Area'
-        cmap = 'YlOrBr'
+        severity_key = 'stress_severity'
+        index_key    = 'ndvi_change'
+        sev_labels   = ['None', 'Mild', 'Moderate', 'Severe', 'Extreme']
+        sev_colors   = ['#2d6a4f', '#a7c957', '#f4a261', '#e76f51', '#9b2226']
+        prob_cmap    = 'YlOrBr'
+        title_prefix = '🏜️  Drought Impact Detection'
+        area_label   = 'Drought'
+        index_cmap   = 'BrBG'
+        index_label  = 'ΔNDVI / Greenness Change'
+        overlay_color = np.array([1.0, 0.5, 0.0])
     else:
-        prob_label = 'Burn Probability'
-        detect_label = 'Detected Burn Areas (Red)'
-        overlay_color = [1, 0, 0]  # Red for burnt
-        title_prefix = 'Wildfire Impact Detection'
-        area_label = 'Burnt Area'
-        cmap = 'RdYlGn_r'
-    
-    # Probability map
-    im = axes[1, 1].imshow(prob_map, cmap=cmap, vmin=0, vmax=1)
-    axes[1, 1].set_title(prob_label, fontsize=12)
-    axes[1, 1].axis('off')
-    plt.colorbar(im, ax=axes[1, 1], fraction=0.046, pad=0.04)
-    
-    # Binary prediction overlay
+        severity_key = 'burn_severity'
+        index_key    = 'dnbr'
+        sev_labels   = ['Unburned', 'Low', 'Moderate-Low', 'Moderate-High', 'High']
+        sev_colors   = ['#2d6a4f', '#a7c957', '#f4a261', '#e76f51', '#9b2226']
+        prob_cmap    = 'RdYlGn_r'
+        title_prefix = '🔥  Wildfire Impact Detection'
+        area_label   = 'Burnt'
+        index_cmap   = 'RdYlGn'
+        index_label  = 'dNBR / Burn Index'
+        overlay_color = np.array([1.0, 0.0, 0.0])
+
+    # ── extract severity map ──
+    severity_map = None
+    index_map    = None
+    method_name  = 'unknown'
+    if hazard_result is not None and hasattr(hazard_result, 'metadata'):
+        severity_map = hazard_result.metadata.get(severity_key)
+        index_map    = hazard_result.metadata.get(index_key)
+        method_name  = hazard_result.metadata.get('method', 'unknown')
+
+    # ── figure layout: 3 rows × 3 cols + stats panel ──────────────
+    fig = plt.figure(figsize=(20, 22))
+    gs = gridspec.GridSpec(4, 3, figure=fig, hspace=0.35, wspace=0.25,
+                           height_ratios=[1, 1, 1, 0.55])
+
+    # === Row 0: Before / After / Change Magnitude ===
+    ax_before = fig.add_subplot(gs[0, 0])
+    ax_after  = fig.add_subplot(gs[0, 1])
+    ax_change = fig.add_subplot(gs[0, 2])
+
+    ax_before.imshow(to_rgb(before_img))
+    ax_before.set_title('Before (RGB)', fontsize=13, fontweight='bold')
+    ax_before.axis('off')
+
+    ax_after.imshow(to_rgb(after_img))
+    ax_after.set_title('After (RGB)', fontsize=13, fontweight='bold')
+    ax_after.axis('off')
+
+    diff = np.abs(after_img - before_img).mean(axis=0)
+    im_change = ax_change.imshow(diff, cmap='hot')
+    ax_change.set_title('Change Magnitude', fontsize=13, fontweight='bold')
+    ax_change.axis('off')
+    plt.colorbar(im_change, ax=ax_change, fraction=0.046, pad=0.04)
+
+    # === Row 1: False Color / Probability Map / Overlay ===
+    ax_fc   = fig.add_subplot(gs[1, 0])
+    ax_prob = fig.add_subplot(gs[1, 1])
+    ax_over = fig.add_subplot(gs[1, 2])
+
+    ax_fc.imshow(to_false_color(after_img))
+    ax_fc.set_title('After (False Color NIR-R-G)', fontsize=13, fontweight='bold')
+    ax_fc.axis('off')
+
+    im_prob = ax_prob.imshow(prob_map, cmap=prob_cmap, vmin=0, vmax=1)
+    ax_prob.set_title(f'{area_label} Probability', fontsize=13, fontweight='bold')
+    ax_prob.axis('off')
+    plt.colorbar(im_prob, ax=ax_prob, fraction=0.046, pad=0.04)
+
+    # Transparent overlay on after image
     overlay = to_rgb(after_img).copy()
-    # Create overlay for affected areas
     affected_mask = pred_mask == 1
-    overlay[affected_mask] = overlay_color
-    
-    axes[1, 2].imshow(overlay)
-    axes[1, 2].set_title(detect_label, fontsize=12)
-    axes[1, 2].axis('off')
-    
-    # Add statistics
+    alpha = 0.55
+    for c in range(3):
+        overlay[:, :, c] = np.where(affected_mask,
+                                    overlay[:, :, c] * (1 - alpha) + overlay_color[c] * alpha,
+                                    overlay[:, :, c])
+    ax_over.imshow(overlay)
+    ax_over.set_title(f'Detected {area_label} Areas', fontsize=13, fontweight='bold')
+    ax_over.axis('off')
+    # Add legend patches
+    legend_patches = [
+        mpatches.Patch(color=overlay_color, label=f'{area_label} detected', alpha=0.7),
+        mpatches.Patch(color='gray', label='Unaffected', alpha=0.5),
+    ]
+    ax_over.legend(handles=legend_patches, loc='lower right', fontsize=9,
+                   framealpha=0.8, edgecolor='black')
+
+    # === Row 2: Index map / Color-coded severity / Index histogram ===
+    ax_idx  = fig.add_subplot(gs[2, 0])
+    ax_sev  = fig.add_subplot(gs[2, 1])
+    ax_hist = fig.add_subplot(gs[2, 2])
+
+    # Spectral index map
+    if index_map is not None:
+        vabs = max(abs(np.nanpercentile(index_map, 2)),
+                   abs(np.nanpercentile(index_map, 98)), 0.01)
+        im_idx = ax_idx.imshow(index_map, cmap=index_cmap, vmin=-vabs, vmax=vabs)
+        ax_idx.set_title(index_label, fontsize=13, fontweight='bold')
+        plt.colorbar(im_idx, ax=ax_idx, fraction=0.046, pad=0.04)
+    else:
+        ax_idx.imshow(diff, cmap='hot')
+        ax_idx.set_title('Spectral Change (proxy)', fontsize=13, fontweight='bold')
+    ax_idx.axis('off')
+
+    # Color-coded severity map with legend
+    if severity_map is not None:
+        cmap_sev = ListedColormap(sev_colors)
+        bounds = [-0.5, 0.5, 1.5, 2.5, 3.5, 4.5]
+        norm_sev = BoundaryNorm(bounds, cmap_sev.N)
+        im_sev = ax_sev.imshow(severity_map, cmap=cmap_sev, norm=norm_sev, interpolation='nearest')
+        ax_sev.set_title(f'{area_label} Severity (per pixel)', fontsize=13, fontweight='bold')
+        ax_sev.axis('off')
+        # Create legend
+        sev_patches = [mpatches.Patch(color=sev_colors[i], label=sev_labels[i])
+                       for i in range(len(sev_labels))]
+        ax_sev.legend(handles=sev_patches, loc='lower right', fontsize=8,
+                      framealpha=0.9, edgecolor='black', title='Severity',
+                      title_fontsize=9)
+    else:
+        ax_sev.imshow(prob_map, cmap='hot')
+        ax_sev.set_title('Probability Heatmap', fontsize=13, fontweight='bold')
+        ax_sev.axis('off')
+
+    # Probability histogram
+    ax_hist.hist(prob_map.ravel(), bins=50, color='#e76f51', alpha=0.8, edgecolor='white', linewidth=0.5)
+    ax_hist.set_title(f'{area_label} Probability Distribution', fontsize=13, fontweight='bold')
+    ax_hist.set_xlabel('Probability', fontsize=11)
+    ax_hist.set_ylabel('Pixel Count', fontsize=11)
+    ax_hist.axvline(x=0.5, color='red', linestyle='--', linewidth=1.5, label='Threshold (0.5)')
+    ax_hist.legend(fontsize=9)
+    ax_hist.grid(axis='y', alpha=0.3)
+
+    # === Row 3: Statistics panel (spanning all 3 cols) ===
+    ax_stats = fig.add_subplot(gs[3, :])
+    ax_stats.axis('off')
+
     total_pixels = pred_mask.size
-    affected_pixels = affected_mask.sum()
-    affected_percentage = (affected_pixels / total_pixels) * 100
-    
-    fig.suptitle(f'{title_prefix}\n{area_label}: {affected_pixels:,} pixels ({affected_percentage:.2f}%)', 
-                 fontsize=14, fontweight='bold')
-    
-    plt.tight_layout()
-    
+    affected_pixels = int(affected_mask.sum())
+    unaffected_pixels = total_pixels - affected_pixels
+    affected_pct = (affected_pixels / total_pixels) * 100
+    unaffected_pct = 100.0 - affected_pct
+
+    # Build statistics table data
+    table_data = [
+        ['Total Pixels', f'{total_pixels:,}', '100.00%'],
+        [f'{area_label} Pixels', f'{affected_pixels:,}', f'{affected_pct:.2f}%'],
+        ['Unaffected Pixels', f'{unaffected_pixels:,}', f'{unaffected_pct:.2f}%'],
+        ['', '', ''],
+        ['Mean Probability', f'{prob_map.mean():.4f}', ''],
+        ['Max Probability', f'{prob_map.max():.4f}', ''],
+        ['Median Probability', f'{np.median(prob_map):.4f}', ''],
+        ['Detection Method', method_name, ''],
+    ]
+
+    # Add per-severity breakdown
+    if severity_map is not None:
+        table_data.append(['', '', ''])
+        table_data.append(['── SEVERITY BREAKDOWN ──', '', ''])
+        for code, label in enumerate(sev_labels):
+            count = int((severity_map == code).sum())
+            pct = (count / total_pixels) * 100
+            table_data.append([f'  {label}', f'{count:,} px', f'{pct:.2f}%'])
+
+    # Add confidence
+    if hazard_result is not None:
+        table_data.append(['', '', ''])
+        table_data.append(['Model Confidence', f'{hazard_result.confidence:.2f}', ''])
+
+    tbl = ax_stats.table(
+        cellText=table_data,
+        colLabels=['Metric', 'Value', 'Percentage'],
+        cellLoc='center',
+        loc='center',
+        colWidths=[0.35, 0.3, 0.2],
+    )
+    tbl.auto_set_font_size(False)
+    tbl.set_fontsize(10)
+    tbl.scale(1, 1.3)
+
+    # Style the table
+    for (row, col), cell in tbl.get_celld().items():
+        if row == 0:
+            cell.set_facecolor('#264653')
+            cell.set_text_props(color='white', fontweight='bold')
+        elif row >= 1 and table_data[row - 1][0].startswith('──'):
+            cell.set_facecolor('#e9ecef')
+            cell.set_text_props(fontweight='bold')
+        else:
+            cell.set_facecolor('#f8f9fa' if row % 2 == 0 else 'white')
+        cell.set_edgecolor('#dee2e6')
+
+    fig.suptitle(
+        f'{title_prefix}\n'
+        f'{area_label} Area: {affected_pixels:,} pixels ({affected_pct:.2f}%) '
+        f'| Total: {total_pixels:,} pixels',
+        fontsize=16, fontweight='bold', y=0.98
+    )
+
     if output_path:
-        plt.savefig(output_path, dpi=150, bbox_inches='tight')
+        plt.savefig(output_path, dpi=150, bbox_inches='tight', facecolor='white')
         print(f"\n✅ Visualization saved to: {output_path}")
-    
+
     if show:
         plt.show()
     else:
         plt.close()
-    
+
     return fig
 
 
@@ -470,13 +593,30 @@ def main():
                         help='Probability threshold for binary prediction (default: 0.5)')
     parser.add_argument('--drought', action='store_true',
                         help='Run in drought detection mode instead of wildfire')
+    parser.add_argument('--hazard', type=str, choices=['wildfire', 'drought', 'rainfall', 'vegetation'],
+                        help='Specify the hazard type to analyze (overrides --drought)')
     
     args = parser.parse_args()
     
     # Determine event type
-    event_type = 'drought' if args.drought else 'wildfire'
-    event_emoji = '🏜️' if args.drought else '🔥'
-    event_name = 'Drought' if args.drought else 'Wildfire'
+    if args.hazard:
+        event_type = args.hazard
+    else:
+        event_type = 'drought' if args.drought else 'wildfire'
+        
+    if event_type == 'drought':
+        event_emoji = '🏜️'
+        event_name = 'Drought'
+    elif event_type == 'rainfall':
+        event_emoji = '🌧️'
+        event_name = 'Rainfall / Flood'
+    elif event_type == 'vegetation':
+        event_emoji = '🌿'
+        event_name = 'Vegetation Health'
+    else:
+        event_type = 'wildfire'
+        event_emoji = '🔥'
+        event_name = 'Wildfire'
     
     print(f"\n{font_colors.BOLD}{'='*60}")
     print(f"{event_emoji} {event_name} Impact Detection from Satellite Images")
@@ -491,16 +631,24 @@ def main():
     if not args.before or not args.after:
         parser.error("--before and --after are required (or use --demo for demo mode)")
     
-    # Load model with appropriate config
-    config_path = args.config
-    if args.drought and args.config == 'configs/config_eval_synthetic.json':
-        config_path = 'configs/config_eval_synthetic_drought.json'
+    # Check if ML model is supported for this hazard
+    use_ml_model = event_type in ['wildfire', 'drought']
     
-    print("📦 Loading pre-trained model...")
-    model, device, configs = load_model(config_path)
-    print(f"   Device: {device}")
-    print(f"   Model: BAM-CD")
-    print(f"   Mode: {event_name} Detection")
+    # Load model with appropriate config if applicable
+    if use_ml_model:
+        config_path = args.config
+        if event_type == 'drought' and args.config == 'configs/config_eval_synthetic.json':
+            config_path = 'configs/config_eval_synthetic_drought.json'
+        
+        print("📦 Loading pre-trained model...")
+        model, device, configs = load_model(config_path)
+        print(f"   Device: {device}")
+        print(f"   Model: BAM-CD")
+        print(f"   Mode: {event_name} Detection")
+        scale_method = configs['datasets']['scale_input']
+    else:
+        print(f"📦 Non-ML Mode: {event_name} Detection")
+        scale_method = 'min-max'  # Default for non-ML
     
     # Load images
     print(f"\n📷 Loading images...")
@@ -521,27 +669,67 @@ def main():
     
     # Preprocess
     print(f"\n⚙️  Preprocessing...")
-    scale_method = configs['datasets']['scale_input']
     print(f"   Scaling method: {scale_method}")
     
     before_tensor = preprocess_image(before_img, scale_method)
     after_tensor = preprocess_image(after_img, scale_method)
     
-    # Predict
-    print(f"\n🔮 Running prediction...")
-    pred_mask, prob_map = predict(model, device, before_tensor, after_tensor)
+    if use_ml_model:
+        # Predict with ML model
+        print(f"\n🔮 Running ML model prediction...")
+        pred_mask, prob_map = predict(model, device, before_tensor, after_tensor)
+        
+        # Apply custom threshold if specified
+        if args.threshold != 0.5:
+            pred_mask = (prob_map >= args.threshold).astype(np.int64)
+            print(f"   Applied threshold: {args.threshold}")
+    else:
+        pred_mask = np.zeros((before_img.shape[1], before_img.shape[2]), dtype=np.int64)
+        prob_map = np.zeros((before_img.shape[1], before_img.shape[2]), dtype=np.float32)
     
-    # Apply custom threshold if specified
-    if args.threshold != 0.5:
-        pred_mask = (prob_map >= args.threshold).astype(np.int64)
-        print(f"   Applied threshold: {args.threshold}")
+    # Also run hazard module analysis (index-based) for detailed severity info
+    print(f"\n🔬 Running spectral index analysis...")
+    hazard_result = None
+    try:
+        if event_type == 'drought':
+            from hazard_drought import DroughtModule
+            hmod = DroughtModule()
+        elif event_type == 'rainfall':
+            from hazard_rainfall import RainfallModule
+            hmod = RainfallModule()
+        elif event_type == 'vegetation':
+            from hazard_vegetation import VegetationModule
+            hmod = VegetationModule()
+        else:
+            from hazard_wildfire import WildfireModule
+            hmod = WildfireModule()
+
+        hazard_result = hmod.analyze(before_img, after_img)
+
+        # Use hazard module results if ML model produced nothing meaningful
+        ml_affected = int((pred_mask == 1).sum())
+        idx_affected = int((hazard_result.binary_mask == 1).sum())
+        
+        if not use_ml_model:
+            print(f"   ℹ️  Using index-based analysis ({idx_affected:,} pixels)")
+            pred_mask = hazard_result.binary_mask.astype(pred_mask.dtype)
+            prob_map  = hazard_result.probability_map
+        elif ml_affected == 0 and idx_affected > 0:
+            print(f"   ℹ️  ML model detected 0 pixels; using index-based analysis ({idx_affected:,} pixels)")
+            pred_mask = hazard_result.binary_mask.astype(pred_mask.dtype)
+            prob_map  = hazard_result.probability_map
+        elif idx_affected > ml_affected:
+            print(f"   ℹ️  Combining ML ({ml_affected:,} px) + index ({idx_affected:,} px) results")
+            pred_mask = np.maximum(pred_mask, hazard_result.binary_mask.astype(pred_mask.dtype))
+            prob_map  = np.maximum(prob_map, hazard_result.probability_map)
+    except Exception as e:
+        print(f"   ⚠️  Hazard module analysis skipped: {e}")
     
     # Calculate statistics
     total_pixels = pred_mask.size
-    affected_pixels = (pred_mask == 1).sum()
+    affected_pixels = int((pred_mask == 1).sum())
     affected_percentage = (affected_pixels / total_pixels) * 100
     
-    # Labels based on mode
     area_label = 'Drought' if args.drought else 'Burnt'
     prob_label = 'drought' if args.drought else 'burn'
     
@@ -551,6 +739,19 @@ def main():
     print(f"   {area_label} area:    {affected_percentage:.2f}%")
     print(f"   Avg {prob_label} prob: {prob_map.mean():.4f}")
     print(f"   Max {prob_label} prob: {prob_map.max():.4f}")
+    if hazard_result is not None:
+        sev_key = 'stress_severity' if args.drought else 'burn_severity'
+        sev_labels = ['None','Mild','Moderate','Severe','Extreme'] if args.drought else \
+                     ['Unburned','Low','Mod-Low','Mod-High','High']
+        sev_map = hazard_result.metadata.get(sev_key)
+        if sev_map is not None:
+            print(f"\n   Severity breakdown:")
+            for code, lbl in enumerate(sev_labels):
+                cnt = int((sev_map == code).sum())
+                pct = cnt / total_pixels * 100
+                print(f"     {lbl:>12s}: {cnt:>8,} px  ({pct:5.2f}%)")
+        print(f"   Method: {hazard_result.metadata.get('method', 'unknown')}")
+        print(f"   Confidence: {hazard_result.confidence:.2f}")
     
     # Save outputs if requested
     if args.output_mask:
@@ -570,7 +771,8 @@ def main():
         before_img, after_img, pred_mask, prob_map,
         output_path=output_path,
         show=not args.no_show,
-        event_type=event_type
+        event_type=event_type,
+        hazard_result=hazard_result,
     )
     
     print(f"\n{font_colors.GREEN}✅ Done!{font_colors.ENDC}\n")

@@ -1,10 +1,10 @@
 # 🔥 Wildfire Impact - Testing Commands
 
-Quick copy-paste commands. Choose **Mac/Linux** or **Windows** section.
+Quick copy-paste commands. Choose **🍎 Mac (python3)** or **🪟 Windows / Linux (python)** section.
 
 ---
 
-## 🍎 Mac / Linux Commands
+## 🍎 Mac (python3) Commands
 
 ### Setup (One-time)
 ```bash
@@ -14,70 +14,111 @@ source venv/bin/activate
 pip3 install -r requirements.txt
 ```
 
-### Quick Test (5 minutes)
-```bash
-# Generate synthetic data
-python3 create_synthetic_dataset.py --event_type wildfire
+### 1. Test on Dataset Directly (Synthetic Data)
 
+Generate and evaluate on synthetic datasets for rapid testing.
+
+```bash
+# ---------- WILDFIRE HAZARD ----------
+# Generate synthetic wildfire data
+python3 create_synthetic_dataset.py --event_type wildfire
 # Run evaluation
 python3 run_experiment.py --config configs/config_eval_synthetic.json
-```
 
-### Full Test Suite
-```bash
-# 1. Wildfire
-python3 create_synthetic_dataset.py --event_type wildfire
-python3 run_experiment.py --config configs/config_eval_synthetic.json
-
-# 2. Drought
+# ---------- DROUGHT HAZARD ----------
+# Generate synthetic drought data
 python3 create_synthetic_dataset.py --event_type drought
+# Run evaluation
 python3 run_experiment.py --config configs/config_eval_synthetic_drought.json
 
-# 3. Visualize
+# ---------- VISUALIZE DATASET RESULTS ----------
+# Create images from the evaluation results
 python3 visualize_predictions.py --results_path results/viz/ --config configs/config_eval_synthetic.json --mode test
 ```
 
-### Train Custom Model
+### 2. Predict from Own Images (`predict_from_images.py`)
+
+Run inference on any image pair (before / after). 
+
+```bash
+# ---------- WILDFIRE HAZARD (Default ML Model) ----------
+python3 predict_from_images.py --before goa_test/goa_before.jpg --after goa_test/goa_after.jpg --rgb --hazard wildfire --output results/wildfire_result.png
+
+# ---------- DROUGHT HAZARD (ML Model) ----------
+python3 predict_from_images.py --before goa_test/goa_before.jpg --after goa_test/goa_after.jpg --rgb --hazard drought --output results/drought_result.png
+
+# ---------- RAINFALL / FLOOD HAZARD (Spectral Index) ----------
+python3 predict_from_images.py --before goa_test/goa_before.jpg --after goa_test/goa_after.jpg --rgb --hazard rainfall --output results/rainfall_result.png
+
+# ---------- VEGETATION HEALTH HAZARD (Spectral Index) ----------
+python3 predict_from_images.py --before goa_test/goa_before.jpg --after goa_test/goa_after.jpg --rgb --hazard vegetation --output results/vegetation_result.png
+
+# Run a quick demo with sample data
+python3 predict_from_images.py --demo
+```
+
+### 3. Train Custom Model
 ```bash
 python3 run_experiment.py --config configs/config.json
 ```
 
 ---
 
-## 🪟 Windows Commands
+## 🪟 Windows / Linux (python) Commands
 
 ### Setup (One-time)
 ```cmd
 cd Wildfire_Impact
 python -m venv venv
-venv\Scripts\activate
+:: For Windows: venv\Scripts\activate
+:: For Linux:  source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### Quick Test (5 minutes)
-```cmd
-:: Generate synthetic data
-python create_synthetic_dataset.py --event_type wildfire
+### 1. Test on Dataset Directly (Synthetic Data)
 
+Generate and evaluate on synthetic datasets for rapid testing.
+
+```cmd
+:: ---------- WILDFIRE HAZARD ----------
+:: Generate synthetic wildfire data
+python create_synthetic_dataset.py --event_type wildfire
 :: Run evaluation
 python run_experiment.py --config configs/config_eval_synthetic.json
-```
 
-### Full Test Suite
-```cmd
-:: 1. Wildfire
-python create_synthetic_dataset.py --event_type wildfire
-python run_experiment.py --config configs/config_eval_synthetic.json
-
-:: 2. Drought
+:: ---------- DROUGHT HAZARD ----------
+:: Generate synthetic drought data
 python create_synthetic_dataset.py --event_type drought
+:: Run evaluation
 python run_experiment.py --config configs/config_eval_synthetic_drought.json
 
-:: 3. Visualize
+:: ---------- VISUALIZE DATASET RESULTS ----------
+:: Create images from the evaluation results
 python visualize_predictions.py --results_path results/viz/ --config configs/config_eval_synthetic.json --mode test
 ```
 
-### Train Custom Model
+### 2. Predict from Own Images (`predict_from_images.py`)
+
+Run inference on any image pair (before / after). 
+
+```cmd
+:: ---------- WILDFIRE HAZARD (Default ML Model) ----------
+python predict_from_images.py --before goa_test\goa_before.jpg --after goa_test\goa_after.jpg --rgb --hazard wildfire --output results\wildfire_result.png
+
+:: ---------- DROUGHT HAZARD (ML Model) ----------
+python predict_from_images.py --before goa_test\goa_before.jpg --after goa_test\goa_after.jpg --rgb --hazard drought --output results\drought_result.png
+
+:: ---------- RAINFALL / FLOOD HAZARD (Spectral Index) ----------
+python predict_from_images.py --before goa_test\goa_before.jpg --after goa_test\goa_after.jpg --rgb --hazard rainfall --output results\rainfall_result.png
+
+:: ---------- VEGETATION HEALTH HAZARD (Spectral Index) ----------
+python predict_from_images.py --before goa_test\goa_before.jpg --after goa_test\goa_after.jpg --rgb --hazard vegetation --output results\vegetation_result.png
+
+:: Run a quick demo with sample data
+python predict_from_images.py --demo
+```
+
+### 3. Train Custom Model
 ```cmd
 python run_experiment.py --config configs/config.json
 ```
@@ -122,20 +163,19 @@ test Loss: 4.9020: 100%|██████████████████�
 Mean IoU: 41.67
 ```
 
-**Note:** Class labels automatically switch based on event type:
-- **Wildfire**: Burnt / Unburnt
-- **Drought**: Drought-affected / No drought
+**Note:** Class labels automatically switch based on event type.
 
 ---
 
-x## 🔧 Troubleshooting
+## 🔧 Troubleshooting
 
 | Error | Fix |
 |-------|-----|
-| `ModuleNotFoundError` | Run `pip3 install -r requirements.txt` (Mac) or `pip install -r requirements.txt` (Windows) |
+| `ModuleNotFoundError` | Run `pip3 install -r requirements.txt` (Mac) or `pip install -r requirements.txt` (Windows/Linux) |
 | `CUDA out of memory` | Edit config: `"batch_size": 2` |
 | `FileNotFoundError` | Run synthetic data creation first |
-| `No module named 'timm'` | `pip3 install timm` (Mac) or `pip install timm` (Windows) |
+| `No module named 'timm'` | `pip3 install timm` (Mac) or `pip install timm` (Windows/Linux) |
+| `unrecognized arguments: --hazard` | Ensure you have the latest script version |
 
 ---
 
@@ -150,56 +190,14 @@ x## 🔧 Troubleshooting
 
 ---
 
-## 🖼️ Predict from Images
-
-Use `predict_from_images.py` to run predictions on your own satellite images.
-
-### 🍎 Mac / Linux
-
-```bash
-# Wildfire detection with RGB images
-python3 predict_from_images.py --before path/to/before.jpg --after path/to/after.jpg --rgb --output results/wildfire_result.png
-
-# Drought detection with RGB images
-python3 predict_from_images.py --before path/to/before.jpg --after path/to/after.jpg --rgb --drought --output results/drought_result.png
-
-# Example with Goa test images (wildfire)
-python3 predict_from_images.py --before goa_test/goa_before.jpg --after goa_test/goa_after.jpg --rgb --output goa_test/result.png
-
-# Example with Goa test images (drought)
-python3 predict_from_images.py --before goa_test/goa_before.jpg --after goa_test/goa_after.jpg --rgb --drought --output goa_test/drought_result.png
-
-# Run demo with synthetic data
-python3 predict_from_images.py --demo
-```
-
-### 🪟 Windows
-
-```cmd
-:: Wildfire detection with RGB images
-python predict_from_images.py --before path/to/before.jpg --after path/to/after.jpg --rgb --output results/wildfire_result.png
-
-:: Drought detection with RGB images
-python predict_from_images.py --before path/to/before.jpg --after path/to/after.jpg --rgb --drought --output results/drought_result.png
-
-:: Example with Goa test images (wildfire)
-python predict_from_images.py --before goa_test/goa_before.jpg --after goa_test/goa_after.jpg --rgb --output goa_test/result.png
-
-:: Example with Goa test images (drought)
-python predict_from_images.py --before goa_test/goa_before.jpg --after goa_test/goa_after.jpg --rgb --drought --output goa_test/drought_result.png
-
-:: Run demo with synthetic data
-python predict_from_images.py --demo
-```
-
-### Available Options
+## 🖼️ Predict From Images Options Reference
 
 | Option | Description |
 |--------|-------------|
 | `--before` | Path to before image (required) |
 | `--after` | Path to after image (required) |
+| `--hazard` | Choose from: `wildfire`, `drought`, `rainfall`, `vegetation` |
 | `--rgb` | Use when input is RGB (3-channel) images |
-| `--drought` | Run drought detection instead of wildfire |
 | `--output` | Path to save visualization |
 | `--output-mask` | Path to save binary prediction mask (.npy) |
 | `--output-prob` | Path to save probability map (.npy) |
@@ -214,4 +212,4 @@ python predict_from_images.py --demo
 
 ---
 
-*Last Updated: February 10, 2026*
+*Last Updated: 2026-02-25*
